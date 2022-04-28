@@ -1,35 +1,38 @@
 <template>
   <div id="app">
+    <WavePicker @set-wave-type="waveType = $event" :activeType="waveType" />
     <BaseSelect
       label="Octave"
-      :selectedOption="octave"
       :options="['1', '2', '3', '4', '5', '6', '7']"
-      @input="octave = $event"
+      v-model="octave"
     />
-    <div
-      id="volume"
-      class="knob"
-      @mousedown="trackMouse('volume')"
-      @mouseup="removeTracking('volume')"
-      @mouseleave="removeTracking('volume')"
-    >
-      <div
-        class="knob__indicator"
-        :style="`transform: rotate(${volume * 3.6}deg)`"
-      ></div>
-    </div>
-    <div
-      id="filter"
-      class="knob"
-      @mousedown="trackMouse('filter')"
-      @mouseup="removeTracking('filter')"
-      @mouseleave="removeTracking('filter')"
-    >
-      <div
-        class="knob__indicator"
-        :style="`transform: rotate(${filterFreq / 7}deg)`"
-      ></div>
-    </div>
+    <BaseSelect
+      label="Voices"
+      :options="['1', '2', '3', '4', '5', '6', '7']"
+      v-model="voices"
+    />
+    <BaseKnob
+      @start-tracking="startTracking"
+      @stop-tracking="stopTracking"
+      control="Volume"
+      :coefficient="3.6"
+      :value="volume"
+    />
+    <BaseKnob
+      @start-tracking="startTracking"
+      @stop-tracking="stopTracking"
+      control="Filter"
+      :coefficient="1 / 6"
+      :value="filterFreq"
+    />
+    <BaseKnob
+      @start-tracking="startTracking"
+      @stop-tracking="stopTracking"
+      control="Detune"
+      :disabled="voices === '1'"
+      :coefficient="3.6 * 15"
+      :value="detune"
+    />
   </div>
 </template>
 
@@ -37,56 +40,60 @@
 import { notes, bindings } from "./helpers/notes";
 import BaseSelect from "./components/BaseSelect.vue";
 import BaseKnob from "./components/BaseKnob.vue";
+import WavePicker from "./components/WavePicker.vue";
 export default {
   data() {
     return {
-      ctx: null,
-      osc: null,
-      osc2: null,
-      osc3: null,
-      lfo: null,
       octave: "4",
+      voices: "1",
+      ctx: null,
+      lfo: null,
       gainNode: null,
       filter: null,
       filterFreq: 1200,
       volume: 100,
+      detune: 2,
+      waveType: "sine",
+      oscillators: [],
     };
   },
   components: {
     BaseKnob,
     BaseSelect,
+    WavePicker,
   },
   mounted() {
     const body = document.getElementById("app");
     body.addEventListener("mousedown", this.setup);
-    document.addEventListener("keydown", this.logKey);
+    document.addEventListener("keydown", this.handleKeypress);
     document.addEventListener("keyup", this.stopNote);
   },
   methods: {
-    trackMouse(control) {
+    startTracking(control) {
       const knob = document.getElementById(control);
       knob.addEventListener("mousemove", this[`change${control}Value`]);
     },
-    removeTracking(control) {
+    stopTracking(control) {
       const knob = document.getElementById(control);
       knob.removeEventListener("mousemove", this[`change${control}Value`]);
     },
-    changevolumeValue(e) {
+    changeVolumeValue(e) {
       this.volume = -e.offsetY + 100;
-      this.gainNode.gain.setValueAtTime(
-        this.volume / 100,
-        this.ctx.currentTime
-      );
+      this.gainNode.gain.value = this.volume / 100;
     },
-    changefilterValue(e) {
-      this.filterFreq = 400 + (-e.offsetY + 100) * 15;
+    changeFilterValue(e) {
+      this.filterFreq = 200 + (-e.offsetY + 100) * 15;
       this.filter.frequency.value = this.filterFreq;
-      // this.filter.frequency.value = (-e.offsetY + 100) * 900;
-      // this.filter.gain.setValueAtTime(this.volume / 100, this.ctx.currentTime);
     },
-    logKey(e) {
+    changeDetuneValue(e) {
+      this.detune = (-e.offsetY + 100) / 15;
+    },
+    handleKeypress(e) {
+      if (e.repeat) {
+        return;
+      }
       if (Object.keys(bindings).includes(e.key)) {
-        this.playNote(this.getFrequency(bindings[e.key]));
+        this.playNote(e.key);
       }
     },
     getFrequency(key) {
@@ -100,79 +107,46 @@ export default {
         frequency: this.filterFreq,
       });
       this.gainNode.connect(this.ctx.destination);
-      this.gainNode.gain.setValueAtTime(
-        this.volume / 100,
-        this.ctx.currentTime
-      );
+      this.gainNode.gain.value = this.volume / 100;
       this.filter.connect(this.gainNode);
       this.lfo = this.ctx.createOscillator();
-      this.lfo.gain.value = 100;
-      this.lfo.frequency.setValueAtTime(100, this.ctx.currentTime);
+      this.lfo.frequency.value = 100;
       this.lfo.connect(this.filter.frequency);
     },
-    playNote(freq) {
-      // const detune = 2;
-      this.osc = this.ctx.createOscillator();
-      this.osc.connect(this.filter);
-      this.osc.type = "sawtooth";
-      this.osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-
-      // this.osc2 = this.ctx.createOscillator();
-      // this.osc2.connect(this.gainNode);
-      // this.osc2.type = "sawtooth";
-      // this.osc2.frequency.setValueAtTime(freq - detune, this.ctx.currentTime);
-
-      // this.osc3 = this.ctx.createOscillator();
-      // this.osc3.connect(this.gainNode);
-      // this.osc3.type = "sawtooth";
-      // this.osc3.frequency.setValueAtTime(freq + detune, this.ctx.currentTime);
-
-      this.osc.start();
-      // this.osc2.start();
-      // this.osc3.start();
+    playNote(key) {
+      for (let i = 0; i < this.voices; i++) {
+        const osc = this.ctx.createOscillator();
+        osc.connect(this.filter);
+        osc.type = this.waveType;
+        osc.frequency.value =
+          this.getFrequency(bindings[key]) + i * this.detune * Math.pow(-1, i);
+        osc.start();
+        this.oscillators = [...this.oscillators, { osc, key }];
+      }
     },
-    stopNote() {
-      this.osc.stop();
-      // this.osc2.stop();
-      // this.osc3.stop();
+    stopNote(e) {
+      const oscillatorsToStop = this.oscillators.filter(
+        (osc) => osc.key === e.key
+      );
+      oscillatorsToStop.forEach((osc) => {
+        osc.osc.stop();
+      });
+      this.oscillators = this.oscillators.filter((osc) => osc.key !== e.key);
     },
   },
 };
 </script>
 <style>
+@import "@/styles/reset.scss";
+body {
+  margin: 0;
+}
 #app {
   background: #eee;
   height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.knob {
-  height: 100px;
-  background: transparent;
-  width: 100px;
-}
-
-.knob__indicator {
-  height: 100%;
-  width: 100%;
-  border-radius: 50%;
-  position: relative;
-  background: orangered;
-  z-index: 0;
-  user-select: none;
-  pointer-events: none;
-}
-
-.knob__indicator::after {
-  background: white;
-  content: "";
-  position: absolute;
-  height: 10px;
-  width: 10px;
-  border-radius: 50%;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 20%;
+  gap: 20px;
 }
 </style>

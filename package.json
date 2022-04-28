@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "sass": "^1.50.0",
     "vite-plugin-vue2": "^1.9.3",
     "vue": "2",
     "vue-template-compiler": "^2.6.14"

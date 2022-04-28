@@ -1,7 +1,7 @@
 <template>
   <div>
     <label :for="label">{{ label }}</label>
-    <select :id="label" :value="selectedOption" @input="setValue">
+    <select :id="label" :value="value" @input="setValue">
       <option v-for="option in options" :key="option">
         {{ option }}
       </option>
@@ -12,13 +12,12 @@
 <script>
 export default {
   name: "BaseSelect",
-  emits: ["input"],
   props: {
     options: {
       type: Array,
       required: true,
     },
-    selectedOption: {
+    value: {
       type: String,
       required: true,
     },
